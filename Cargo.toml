@@ -1,0 +1,12 @@
+[package]
+name = "bevy_cgol"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = "0.15.3"
+bevy_egui = "0.33.0"
+bevy_life = "0.11.0"
+bevy_spatial = "0.10.0"
+rand = "0.9.0"
+rayon = "1.10.0"
