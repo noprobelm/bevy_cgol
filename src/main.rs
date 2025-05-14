@@ -1,27 +1,18 @@
-use bevy::core::FrameCount;
 use bevy::utils::Duration;
 use bevy::utils::HashMap;
 use bevy::{input::mouse::MouseWheel, prelude::*, window::WindowMode};
-use bevy_spatial::{kdtree::KDTree2, AutomaticUpdate, SpatialAccess, SpatialStructure};
 use rand::Rng;
-use rayon::prelude::*;
 
 fn main() {
     App::new()
-        .add_plugins((
-            DefaultPlugins.set(WindowPlugin {
-                primary_window: Some(Window {
-                    title: "Conway's Game of Life".to_string(),
-                    mode: WindowMode::BorderlessFullscreen(MonitorSelection::Primary),
-                    ..default()
-                }),
+        .add_plugins((DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "Conway's Game of Life".to_string(),
+                mode: WindowMode::BorderlessFullscreen(MonitorSelection::Primary),
                 ..default()
             }),
-            // AutomaticUpdate::<Cell>::new()
-            //     .with_spatial_ds(SpatialStructure::KDTree2)
-            //     .with_frequency(Duration::from_millis(200)),
-        ))
-        .init_resource::<Cells>()
+            ..default()
+        }),))
         .init_resource::<ElapsedSteps>()
         .insert_resource(ClearColor(Color::Srgba(Srgba::rgba_u8(49, 87, 113, 255))))
         .init_resource::<StepTimer>()
@@ -78,14 +69,15 @@ fn step(
     elapsed_steps.0 += 1;
 }
 
+#[allow(dead_code)]
 fn cleanup_orphaned_cells(
     par_commands: ParallelCommands,
     cells_query: Query<(Entity, &Cell, &State, &Coordinates)>,
 ) {
     cells_query
         .par_iter()
-        .for_each(|(entity, _, state, coordinates)| {
-            let mut num_living_neighbors = 0;
+        .for_each(|(entity, _, _state, _coordinates)| {
+            let num_living_neighbors = 0;
             if num_living_neighbors == 0 {
                 par_commands.command_scope(|mut commands| {
                     commands.entity(entity).despawn();
@@ -129,6 +121,7 @@ fn setup_world(mut commands: Commands) {
         }
     }
 }
+
 fn setup_camera(mut commands: Commands) {
     commands.spawn((
         Camera2d,
@@ -258,13 +251,6 @@ pub struct Alive;
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Default, Component, Reflect)]
 #[component(storage = "SparseSet")]
 pub struct Dead;
-
-pub type CellTree = KDTree2<Cell>;
-
-#[derive(Clone, Eq, PartialEq, Hash, Debug, Default, Resource, Reflect)]
-pub struct Cells {
-    cells: Vec<Entity>,
-}
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug, Default, Resource, Reflect)]
 pub struct ElapsedSteps(u64);
