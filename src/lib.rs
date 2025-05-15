@@ -7,7 +7,6 @@ pub struct ConwayPlugin;
 impl Plugin for ConwayPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ElapsedSteps>()
-            .insert_resource(ClearColor(Color::Srgba(Srgba::rgba_u8(49, 87, 113, 255))))
             .init_resource::<StepTimer>()
             .add_systems(Update, step)
             .add_systems(Update, color_cells.after(step));

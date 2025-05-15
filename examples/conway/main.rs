@@ -16,6 +16,7 @@ fn main() {
             }),
             ConwayPlugin,
         ))
+        .insert_resource(ClearColor(Color::Srgba(Srgba::rgba_u8(49, 87, 113, 255))))
         .add_systems(Startup, (setup_camera, setup_world))
         .add_systems(Update, (pan_camera, ev_mouse_wheel))
         .run();
