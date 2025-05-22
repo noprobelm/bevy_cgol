@@ -1,7 +1,7 @@
 use bevy::{input::mouse::MouseWheel, prelude::*, window::WindowMode};
 use rand::Rng;
 
-use bevy_cgol::{Cell, ConwayPlugin, Coordinates, State};
+use bevy_cgol::{CellState, ConwayState, Coordinates, LifePlugin, MooreCell};
 
 fn main() {
     App::new()
@@ -14,7 +14,10 @@ fn main() {
                 }),
                 ..default()
             }),
-            ConwayPlugin,
+            LifePlugin::<MooreCell, ConwayState> {
+                cell: MooreCell,
+                behavior: ConwayState::default(),
+            },
         ))
         .insert_resource(ClearColor(Color::Srgba(Srgba::rgba_u8(49, 87, 113, 255))))
         .add_systems(Startup, (setup_camera, setup_world))
@@ -27,17 +30,21 @@ fn setup_world(mut commands: Commands) {
     for y in -200..200 {
         for x in -200..200 {
             let state = if rng.random_bool(0.1) {
-                State::Alive
+                CellState::Alive
             } else {
-                State::Dead
+                CellState::Dead
             };
             commands.spawn((
                 Sprite {
                     color: Color::srgba(255., 0., 0., 0.),
                     ..default()
                 },
-                Cell,
-                state,
+                MooreCell,
+                ConwayState {
+                    state,
+                    birth_rules: vec![3],
+                    survival_rules: vec![2, 3],
+                },
                 Coordinates(IVec2::new(x, y)),
                 Transform::from_translation(Vec3::new(x as f32, y as f32, 0.)),
             ));

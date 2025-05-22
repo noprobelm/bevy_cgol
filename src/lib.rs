@@ -1,21 +1,84 @@
+pub mod behavior;
+pub mod cell;
+pub mod components;
+pub mod resources;
+
 use bevy::prelude::*;
-use bevy::utils::Duration;
 use bevy::utils::HashMap;
 
-pub struct ConwayPlugin;
+pub use behavior::*;
+pub use cell::*;
+pub use components::*;
+pub use resources::*;
 
-impl Plugin for ConwayPlugin {
+pub struct LifePlugin<C, B>
+where
+    C: Cell,
+    B: CellBehavior,
+{
+    pub cell: C,
+    pub behavior: B,
+}
+
+impl<C, B> Default for LifePlugin<C, B>
+where
+    C: Cell,
+    B: CellBehavior,
+{
+    fn default() -> Self {
+        LifePlugin {
+            cell: C::default(),
+            behavior: B::default(),
+        }
+    }
+}
+
+impl<C, B> Plugin for LifePlugin<C, B>
+where
+    C: Cell,
+    B: CellBehavior,
+{
     fn build(&self, app: &mut App) {
         app.init_resource::<ElapsedSteps>()
             .init_resource::<StepTimer>()
-            .add_systems(Update, step)
+            .add_systems(Update, new_step::<C, B>)
             .add_systems(Update, color_cells.after(step));
     }
 }
 
+pub fn new_step<C, B>(
+    mut cell_query: Query<(Entity, &C, &mut B, &Coordinates)>,
+    mut step_timer: ResMut<StepTimer>,
+    time: Res<Time>,
+) where
+    C: Cell,
+    B: CellBehavior,
+{
+    step_timer.0.tick(time.delta());
+    if !step_timer.0.finished() {
+        return;
+    }
+    let map: HashMap<IVec2, CellState> = cell_query
+        .iter()
+        .map(|(_, _, state, coordinates)| (coordinates.0, state.state()))
+        .collect();
+    cell_query
+        .par_iter_mut()
+        .for_each(|(_, cell, mut state, coordinates)| {
+            let neighbor_states: Vec<&CellState> = cell
+                .neighbors()
+                .iter()
+                .filter_map(|relative_coordinates| {
+                    let neighbor_coordinates = coordinates.0 + relative_coordinates;
+                    map.get(&neighbor_coordinates)
+                })
+                .collect();
+            state.change_state(&neighbor_states); // Pass as a slice of references
+        });
+}
 pub fn step(
     mut elapsed_steps: ResMut<ElapsedSteps>,
-    mut cell_query: Query<(Entity, &Cell, &mut State, &Coordinates)>,
+    mut cell_query: Query<(Entity, &MooreCell, &mut CellState, &Coordinates)>,
     mut step_timer: ResMut<StepTimer>,
     time: Res<Time>,
     // tree: Res<CellTree>,
@@ -25,7 +88,7 @@ pub fn step(
         return;
     }
 
-    let map: HashMap<Coordinates, State> = cell_query
+    let map: HashMap<Coordinates, CellState> = cell_query
         .iter()
         .map(|(_, _, state, coordinates)| (*coordinates, *state))
         .collect();
@@ -35,20 +98,20 @@ pub fn step(
             let mut num_living_neighbors = 0;
             MooreNeighborhood::iter_neighbors(*coordinates).for_each(|neighbor_coordinates| {
                 if let Some(neighbor_state) = map.get(&neighbor_coordinates) {
-                    if neighbor_state == &State::Alive {
+                    if neighbor_state == &CellState::Alive {
                         num_living_neighbors += 1;
                     }
                 }
             });
             match state.as_ref() {
-                State::Alive => {
+                CellState::Alive => {
                     if num_living_neighbors < 2 {
                         state.transition();
                     } else if num_living_neighbors > 3 {
                         state.transition()
                     }
                 }
-                State::Dead => {
+                CellState::Dead => {
                     if num_living_neighbors == 3 {
                         state.transition();
                     }
@@ -61,7 +124,7 @@ pub fn step(
 #[allow(dead_code)]
 fn cleanup_orphaned_cells(
     par_commands: ParallelCommands,
-    cells_query: Query<(Entity, &Cell, &State, &Coordinates)>,
+    cells_query: Query<(Entity, &MooreCell, &CellState, &Coordinates)>,
 ) {
     cells_query
         .par_iter()
@@ -75,104 +138,15 @@ fn cleanup_orphaned_cells(
         });
 }
 
-fn color_cells(mut cells_query: Query<(&Cell, &mut Sprite, &State)>) {
+fn color_cells(mut cells_query: Query<(&MooreCell, &mut Sprite, &CellState)>) {
     cells_query
         .par_iter_mut()
         .for_each(|(_, mut sprite, state)| match state {
-            State::Alive => {
+            CellState::Alive => {
                 sprite.color = Color::Srgba(Srgba::rgba_u8(246, 174, 45, 255));
             }
-            State::Dead => {
+            CellState::Dead => {
                 sprite.color = Color::Srgba(Srgba::NONE);
             }
         });
-}
-
-#[derive(Clone, Eq, PartialEq, Debug, Default, Resource, Reflect)]
-pub struct CellMap {
-    map: HashMap<Coordinates, Alive>,
-}
-
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Default, Component, Reflect)]
-pub struct Coordinates(pub IVec2);
-
-pub enum MooreNeighborhood {
-    North,
-    Northeast,
-    East,
-    Southeast,
-    South,
-    Southwest,
-    West,
-    Northwest,
-}
-
-impl MooreNeighborhood {
-    pub fn relative_position(&self, coordinates: Coordinates) -> Coordinates {
-        let delta = match self {
-            MooreNeighborhood::North => IVec2::new(0, 1),
-            MooreNeighborhood::Northeast => IVec2::new(1, 1),
-            MooreNeighborhood::East => IVec2::new(1, 0),
-            MooreNeighborhood::Southeast => IVec2::new(1, -1),
-            MooreNeighborhood::South => IVec2::new(0, -1),
-            MooreNeighborhood::Southwest => IVec2::new(-1, -1),
-            MooreNeighborhood::West => IVec2::new(-1, 0),
-            MooreNeighborhood::Northwest => IVec2::new(-1, 1),
-        };
-        Coordinates(coordinates.0 + delta)
-    }
-
-    pub fn iter_neighbors(coordinates: Coordinates) -> impl Iterator<Item = Coordinates> {
-        [
-            IVec2::new(0, 1),
-            IVec2::new(1, 1),
-            IVec2::new(1, 0),
-            IVec2::new(1, -1),
-            IVec2::new(0, -1),
-            IVec2::new(-1, -1),
-            IVec2::new(-1, 0),
-            IVec2::new(-1, 1),
-        ]
-        .into_iter()
-        .map(move |delta| Coordinates(coordinates.0 + delta))
-    }
-}
-
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Default, Component, Reflect)]
-pub struct Cell;
-
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Default, Component, Reflect)]
-pub enum State {
-    Dead,
-    #[default]
-    Alive,
-}
-
-impl State {
-    fn transition(&mut self) {
-        *self = match self {
-            State::Alive => State::Dead,
-            State::Dead => State::Alive,
-        }
-    }
-}
-
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Default, Component, Reflect)]
-#[component(storage = "SparseSet")]
-pub struct Alive;
-
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Default, Component, Reflect)]
-#[component(storage = "SparseSet")]
-pub struct Dead;
-
-#[derive(Clone, Eq, PartialEq, Hash, Debug, Default, Resource, Reflect)]
-pub struct ElapsedSteps(u64);
-
-#[derive(Clone, Eq, PartialEq, Debug, Resource, Reflect)]
-pub struct StepTimer(Timer);
-
-impl Default for StepTimer {
-    fn default() -> Self {
-        StepTimer(Timer::new(Duration::from_millis(100), TimerMode::Repeating))
-    }
 }
